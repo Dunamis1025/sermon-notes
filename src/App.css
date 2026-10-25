@@ -8,6 +8,11 @@
   --accent-ink: #ffffff;
   --danger: #b24a3c;
   --passage-bg: #f3ede2;
+  --sel: rgba(63, 107, 87, 0.18);
+  --p0: #fff2b3;
+  --p1: #d8efd2;
+  --p2: #ffdce0;
+  --p3: #d5e6fa;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -20,6 +25,11 @@
     --accent-ink: #12201a;
     --danger: #e0806f;
     --passage-bg: #1d1a17;
+    --sel: rgba(111, 166, 140, 0.28);
+    --p0: #4b4527;
+    --p1: #2c4231;
+    --p2: #4b3034;
+    --p3: #2b3b4e;
   }
 }
 
@@ -143,3 +153,39 @@ textarea.body { min-height: 220px; resize: none; line-height: 1.8; overflow: hid
   padding: 20px 16px calc(env(safe-area-inset-bottom) + 20px);
 }
 .sheet h2 { margin: 0 0 4px; font-size: 20px; }
+
+/* ── 말씀 고르기 ── */
+.picker { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: grid; gap: 10px; margin-top: 8px; }
+.picker-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.picker-head strong { font-family: 'Noto Serif KR', serif; font-size: 17px; }
+.picker-foot { justify-content: space-between; }
+.suggs { display: flex; flex-wrap: wrap; gap: 8px; }
+.sugg { padding: 9px 14px; border-radius: 999px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; font-size: 15px; }
+.sugg.wide { width: 100%; border-radius: 12px; text-align: left; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.numgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.booksgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.numgrid button, .booksgrid button { padding: 12px 0; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; }
+.verselist { list-style: none; margin: 0; padding: 0; }
+.verse { display: flex; gap: 10px; width: 100%; text-align: left; padding: 10px 6px; border: 0; border-bottom: 1px solid var(--line); background: none; cursor: pointer; font-family: 'Noto Serif KR', serif; line-height: 1.8; }
+.verse.in { background: var(--sel); }
+.verse .vn { flex: none; width: 2em; text-align: right; color: var(--accent); font-family: -apple-system, sans-serif; font-size: 13px; padding-top: 3px; }
+.pickbar { position: sticky; bottom: calc(env(safe-area-inset-bottom) + 8px); display: flex; gap: 8px; padding: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); }
+.pickbar .primary { flex: 1; }
+.pickbar button:not(.primary) { flex: none; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; }
+
+/* ── 포스트잇 ── */
+.postit { background: var(--p0); border-radius: 4px 4px 16px 4px; margin: 10px 0; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14); overflow: hidden; }
+.postit[data-c='1'] { background: var(--p1); }
+.postit[data-c='2'] { background: var(--p2); }
+.postit[data-c='3'] { background: var(--p3); }
+.postit-head { display: flex; align-items: center; padding-right: 6px; }
+.postit-toggle { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; padding: 12px 8px 12px 14px; background: none; border: 0; cursor: pointer; text-align: left; }
+.postit-name { font-family: 'Noto Serif KR', serif; font-weight: 600; font-size: 17px; }
+.postit-toggle .tr { font-size: 12px; color: var(--muted); }
+.postit-toggle .chev { margin-left: auto; font-size: 12px; color: var(--muted); }
+.postit-body { padding: 0 16px 14px; font-family: 'Noto Serif KR', serif; line-height: 1.95; }
+.postit-body p { margin: 0 0 8px; }
+.postit-body sup { font-size: 11px; color: var(--accent); margin-right: 3px; font-family: -apple-system, sans-serif; }
+.addbar { margin: 12px 0 0; }
+.addbar .primary { flex: 1; }
+.pickbar .primary { word-break: keep-all; line-height: 1.3; font-size: 15px; }

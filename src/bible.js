@@ -75,6 +75,28 @@ export const BOOKS = [
 // 장이 하나뿐인 책 (오바댜, 빌레몬서, 요한이서, 요한삼서, 유다서)
 const SINGLE_CHAPTER = new Set([31, 57, 63, 64, 65]);
 
+// 책별 장 수 (창세기 ~ 요한계시록)
+export const CHAPTERS = [
+  50, 40, 27, 36, 34, 24, 21, 4, 31, 24, 22, 25, 29, 36, 10, 13, 10, 42, 150, 31, 12, 8, 66, 52, 5, 48, 12, 14, 3, 9,
+  1, 4, 7, 3, 3, 3, 2, 14, 4, 28, 16, 24, 21, 28, 16, 16, 13, 6, 6, 4, 4, 5, 3, 6, 4, 3, 1, 13, 5, 5, 3, 5, 1, 1, 1, 22,
+];
+
+// 자동완성: 앞글자가 이름·약어와 맞는 책 번호들 (성경 순서, 최대 8개)
+export function suggestBooks(q) {
+  const s = (q || '').replace(/\s+/g, '');
+  if (!s) return [];
+  const exact = []; // 약어·이름이 정확히 같은 책 (예: 요 → 요한복음)
+  const prefix = [];
+  for (const [id, name, abbrs] of BOOKS) {
+    const keys = [name, ...abbrs];
+    const m = name.match(/^(.{2,})(복음|서|기)$/);
+    if (m) keys.push(m[1]);
+    if (keys.includes(s)) exact.push(id);
+    else if (keys.some((k) => k.startsWith(s))) prefix.push(id);
+  }
+  return [...exact, ...prefix].slice(0, 8);
+}
+
 // 별칭 목록 만들기: 정식 이름 + 약어 + "서/복음/기"를 뗀 형태 (예: 로마, 요한, 마태)
 const ALIASES = (() => {
   const list = [];
@@ -122,6 +144,7 @@ export function parseReference(input) {
 
   let r = s
     .slice(used)
+    .replace(/(\d)\.(\d)/g, '$1:$2') // 3.16 → 3:16
     .replace(/[~〜–—－]/g, '-')
     .replace(/부터|에서/g, '-')
     .replace(/까지/g, '')
@@ -168,6 +191,10 @@ export function parseReference(input) {
     return { error: '장과 절을 이해하지 못했어요. 예: 요한복음 3장 16절' };
   }
 
+  const maxC = CHAPTERS[bookId - 1];
+  if (c1 < 1 || c2 > maxC) {
+    return { error: `${BOOK_NAME[bookId]}은(는) ${maxC}${bookId === 19 ? '편' : '장'}까지 있어요.` };
+  }
   if (c2 < c1 || (c1 === c2 && v1 != null && v2 < v1)) {
     return { error: '범위가 거꾸로 되어 있어요. 시작이 끝보다 앞이어야 해요.' };
   }
@@ -208,33 +235,46 @@ function cleanText(html) {
     .trim();
 }
 
-// 본문 가져오기: [{ c, v, text }]
-export async function fetchPassage(p, translation) {
-  const out = [];
+// 한 장 가져오기: [{ c, v, text }] (한 번 받은 장은 기억해 둠)
+const chapterCache = new Map();
+
+export async function fetchChapter(book, chapter, translation) {
+  const key = `${translation}/${book}/${chapter}`;
+  if (chapterCache.has(key)) return chapterCache.get(key);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 12000);
   try {
-    for (let c = p.c1; c <= p.c2; c++) {
-      const url = `https://bolls.life/get-text/${encodeURIComponent(translation)}/${p.book}/${c}/`;
-      const res = await fetch(url, { signal: ctrl.signal });
-      if (!res.ok) throw new Error(`서버 응답 오류 (${res.status})`);
-      const data = await res.json();
-      if (!Array.isArray(data)) throw new Error('본문 형식이 달라요');
-      for (const row of data) {
-        const v = row.verse;
-        if (p.v1 != null) {
-          if (c === p.c1 && v < p.v1) continue;
-          if (c === p.c2 && v > p.v2) continue;
-        }
-        const text = cleanText(row.text);
-        if (text) out.push({ c, v, text });
-      }
-    }
+    const res = await fetch(`https://bolls.life/get-text/${encodeURIComponent(translation)}/${book}/${chapter}/`, {
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`서버 응답 오류 (${res.status})`);
+    const data = await res.json();
+    if (!Array.isArray(data)) throw new Error('본문 형식이 달라요');
+    const rows = data.map((r) => ({ c: chapter, v: r.verse, text: cleanText(r.text) })).filter((r) => r.text);
+    if (!rows.length) throw new Error('해당 장을 찾지 못했어요');
+    chapterCache.set(key, rows);
+    return rows;
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('시간이 너무 오래 걸려요. 인터넷을 확인해 주세요.');
+    if (e instanceof TypeError) throw new Error('인터넷 연결을 확인해 주세요');
     throw e;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// 구절(범위) 가져오기
+export async function fetchPassage(p, translation) {
+  const out = [];
+  for (let c = p.c1; c <= p.c2; c++) {
+    const rows = await fetchChapter(p.book, c, translation);
+    for (const r of rows) {
+      if (p.v1 != null) {
+        if (c === p.c1 && r.v < p.v1) continue;
+        if (c === p.c2 && r.v > p.v2) continue;
+      }
+      out.push(r);
+    }
   }
   if (!out.length) throw new Error('해당 구절을 찾지 못했어요. 장·절 번호를 확인해 주세요.');
   return out;

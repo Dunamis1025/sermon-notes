@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { parseReference, formatReference, fetchPassage } from './bible';
+import PassagePicker from './PassagePicker';
 
 const NOTES_KEY = 'sermon-notes-v1';
 const SETTINGS_KEY = 'sermon-settings-v1';
@@ -76,8 +76,6 @@ function passageText(n) {
 function refLabels(n) {
   return n.passages.map((p) => p.refLabel).join(', ');
 }
-
-const SR = typeof window !== 'undefined' ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
 
 export default function App() {
   const [notes, setNotes] = useState(() => load(NOTES_KEY, []).map(normalizeNote));
@@ -258,10 +256,8 @@ function List({ notes, onOpen, onCreate, onSettings }) {
 /* ───────────── 노트 작성 ───────────── */
 
 function Editor({ note, translation, onPatch, onBack, onDelete }) {
-  const [refInput, setRefInput] = useState('');
-  const [status, setStatus] = useState({ type: 'idle', msg: '' });
-  const [listening, setListening] = useState(false);
-  const [paste, setPaste] = useState(null); // { label, text } — 직접 붙여넣기 입력 중
+  const [mode, setMode] = useState(note.passages.length ? null : 'pick'); // null | 'pick' | 'paste'
+  const [paste, setPaste] = useState({ label: '', text: '' });
   const [closed, setClosed] = useState({}); // 접어 둔 말씀 id
   const bodyRef = useRef(null);
 
@@ -277,74 +273,21 @@ function Editor({ note, translation, onPatch, onBack, onDelete }) {
     onPatch({ passages: [...note.passages, { id: String(Date.now()), translation: '', verses: [], manual: '', ...p }] });
   }
   function removePassage(id, label) {
-    if (!window.confirm(`"${label}" 말씀을 이 노트에서 뺄까요?`)) return;
+    if (!window.confirm(`"${label}" 말씀을 이 노트에서 뗄까요?`)) return;
     onPatch({ passages: note.passages.filter((p) => p.id !== id) });
   }
-
-  async function lookup(text) {
-    const input = (text ?? refInput).trim();
-    const parsed = parseReference(input);
-    if (parsed.error) {
-      setStatus({ type: 'error', msg: parsed.error });
-      return;
-    }
-    const label = formatReference(parsed);
-    if (note.passages.some((p) => p.refLabel === label)) {
-      setStatus({ type: 'error', msg: `${label}은(는) 이미 추가되어 있어요.` });
-      return;
-    }
-    setStatus({ type: 'loading', msg: `${label} 찾는 중…` });
-    try {
-      const verses = await fetchPassage(parsed, translation);
-      addPassage({ refLabel: label, verses, translation });
-      setRefInput('');
-      setPaste(null);
-      setStatus({ type: 'idle', msg: '' });
-    } catch (e) {
-      setStatus({
-        type: 'error',
-        msg: `본문을 불러오지 못했어요 (${e.message}). 아래에 직접 붙여넣어 추가할 수 있어요.`,
-      });
-      setPaste({ label, text: '' });
-    }
+  function pin(p) {
+    addPassage(p);
+    setMode(null);
   }
-
+  function openPaste(label) {
+    setPaste({ label: label || '', text: '' });
+    setMode('paste');
+  }
   function submitPaste() {
     if (!paste.text.trim()) return;
-    addPassage({ refLabel: paste.label || '직접 입력', manual: paste.text.trim() });
-    setPaste(null);
-    setRefInput('');
-    setStatus({ type: 'idle', msg: '' });
-  }
-
-  function startVoice() {
-    if (!SR) {
-      setStatus({ type: 'error', msg: '이 브라우저는 음성 인식을 지원하지 않아요. 키보드의 🎤 받아쓰기를 써 주세요.' });
-      return;
-    }
-    const rec = new SR();
-    rec.lang = 'ko-KR';
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
-    rec.onstart = () => setListening(true);
-    rec.onend = () => setListening(false);
-    rec.onerror = () => {
-      setListening(false);
-      setStatus({
-        type: 'error',
-        msg: '음성 인식을 시작하지 못했어요. 키보드의 🎤 받아쓰기를 대신 써 보세요.',
-      });
-    };
-    rec.onresult = (e) => {
-      const t = e.results[0][0].transcript;
-      setRefInput(t);
-      lookup(t);
-    };
-    try {
-      rec.start();
-    } catch {
-      setListening(false);
-    }
+    addPassage({ refLabel: paste.label.trim() || '직접 입력', manual: paste.text.trim() });
+    setMode(null);
   }
 
   return (
@@ -372,34 +315,61 @@ function Editor({ note, translation, onPatch, onBack, onDelete }) {
       </div>
 
       <div className="field">
-        <label>본문 말씀 {note.passages.length > 0 && '(여러 개 추가할 수 있어요)'}</label>
-        <div className="row">
-          <input
-            type="text"
-            value={refInput}
-            onChange={(e) => setRefInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && lookup()}
-            placeholder={note.passages.length ? '다른 말씀 추가: 예) 이사야 41장 10절' : '예: 요한복음 3장 16절'}
-            enterKeyHint="search"
-            autoCapitalize="off"
-            autoCorrect="off"
+        <label>설교 제목</label>
+        <input
+          type="text"
+          value={note.title}
+          onChange={(e) => onPatch({ title: e.target.value })}
+          placeholder="주보에 적힌 제목"
+        />
+      </div>
+
+      <div className="field">
+        <label>본문 말씀</label>
+        {note.passages.map((p, i) => {
+          const open = !closed[p.id];
+          const multi = p.verses.length > 0 && p.verses[0].c !== p.verses[p.verses.length - 1].c;
+          return (
+            <section className="postit" data-c={i % 4} key={p.id}>
+              <div className="postit-head">
+                <button className="postit-toggle" onClick={() => setClosed({ ...closed, [p.id]: open })}>
+                  <span className="postit-name">📌 {p.refLabel}</span>
+                  <span className="tr">{p.verses.length ? p.translation : ''}</span>
+                  <span className="chev">{open ? '접기 ▲' : '펼치기 ▼'}</span>
+                </button>
+                <button className="icon-btn danger" onClick={() => removePassage(p.id, p.refLabel)} aria-label="이 말씀 떼기">
+                  ✕
+                </button>
+              </div>
+              {open && (
+                <div className="postit-body">
+                  {p.verses.length > 0 && (
+                    <p>
+                      {p.verses.map((v, j) => (
+                        <span key={j}>
+                          <sup>{multi && (j === 0 || v.c !== p.verses[j - 1].c) ? `${v.c}:${v.v}` : v.v}</sup>
+                          {v.text}{' '}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                  {p.manual.trim() && <p>{p.manual}</p>}
+                </div>
+              )}
+            </section>
+          );
+        })}
+
+        {mode === 'pick' && (
+          <PassagePicker
+            translation={translation}
+            pinned={note.passages.map((p) => p.refLabel)}
+            onPin={pin}
+            onManual={openPaste}
+            onClose={() => setMode(null)}
           />
-          {SR && (
-            <button className={listening ? 'mic on' : 'mic'} onClick={startVoice} aria-label="음성으로 입력">
-              🎤
-            </button>
-          )}
-          <button className="primary" onClick={() => lookup()} disabled={status.type === 'loading'}>
-            {note.passages.length ? '추가' : '찾기'}
-          </button>
-        </div>
-        {status.msg && <p className={status.type === 'error' ? 'msg error' : 'msg'}>{status.msg}</p>}
-        {!paste && (
-          <button className="linkbtn" onClick={() => setPaste({ label: refInput.trim(), text: '' })}>
-            직접 붙여넣어 추가
-          </button>
         )}
-        {paste && (
+        {mode === 'paste' && (
           <div className="pastebox">
             <input
               type="text"
@@ -416,64 +386,21 @@ function Editor({ note, translation, onPatch, onBack, onDelete }) {
             />
             <div className="row">
               <button className="primary" onClick={submitPaste}>
-                말씀 추가
+                말씀 붙이기
               </button>
-              <button onClick={() => setPaste(null)}>취소</button>
+              <button onClick={() => setMode(null)}>취소</button>
             </div>
           </div>
         )}
-      </div>
-
-      <div className="field">
-        <label>설교 제목</label>
-        <input
-          type="text"
-          value={note.title}
-          onChange={(e) => onPatch({ title: e.target.value })}
-          placeholder="주보에 적힌 제목"
-        />
-      </div>
-
-      {note.passages.length === 0 && (
-        <section className="passage">
-          <div className="passage-body">
-            <p className="placeholder">위에서 구절을 찾으면 본문이 여기에 나타나요.</p>
+        {mode === null && (
+          <div className="row addbar">
+            <button className="primary" onClick={() => setMode('pick')}>
+              ＋ 말씀 {note.passages.length ? '더 ' : ''}붙이기
+            </button>
+            <button onClick={() => openPaste('')}>직접 붙여넣기</button>
           </div>
-        </section>
-      )}
-      {note.passages.map((p) => {
-        const open = !closed[p.id];
-        const multi = p.verses.length > 0 && p.verses[0].c !== p.verses[p.verses.length - 1].c;
-        return (
-          <section className="passage" key={p.id}>
-            <div className="passage-head">
-              <button className="passage-toggle" onClick={() => setClosed({ ...closed, [p.id]: open })}>
-                <span className="passage-name">{p.refLabel}</span>
-                <span className="tr">{p.verses.length ? p.translation : ''}</span>
-                <span className="chev">{open ? '접기 ▲' : '펼치기 ▼'}</span>
-              </button>
-              <button className="icon-btn danger" onClick={() => removePassage(p.id, p.refLabel)} aria-label="이 말씀 빼기">
-                ✕
-              </button>
-            </div>
-            {open && (
-              <div className="passage-body">
-                {p.verses.length > 0 && (
-                  <p>
-                    {p.verses.map((v, i) => (
-                      <span key={i}>
-                        <sup>{multi && (i === 0 || v.c !== p.verses[i - 1].c) ? `${v.c}:${v.v}` : v.v}</sup>
-                        {v.text}{' '}
-                      </span>
-                    ))}
-                  </p>
-                )}
-                {p.manual.trim() && <p>{p.manual}</p>}
-              </div>
-            )}
-          </section>
-        );
-      })}
+        )}
+      </div>
 
       <div className="field">
         <label>받아 적기</label>
