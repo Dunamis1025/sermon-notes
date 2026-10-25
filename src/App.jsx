@@ -105,6 +105,9 @@ export default function App() {
     setEditingId(null);
     window.scrollTo(0, 0);
   }
+  function removeNote(id) {
+    setNotes((prev) => prev.filter((n) => n.id !== id));
+  }
   function deleteNote(id) {
     if (!window.confirm('이 노트를 삭제할까요? 되돌릴 수 없어요.')) return;
     setNotes((prev) => prev.filter((n) => n.id !== id));
@@ -127,6 +130,7 @@ export default function App() {
           notes={notes}
           onOpen={setEditingId}
           onCreate={createNote}
+          onDelete={removeNote}
           onSettings={() => setShowSettings(true)}
         />
       )}
@@ -145,7 +149,8 @@ export default function App() {
 
 /* ───────────── 목록 + 검색 ───────────── */
 
-function List({ notes, onOpen, onCreate, onSettings }) {
+function List({ notes, onOpen, onCreate, onDelete, onSettings }) {
+  const [armedId, setArmedId] = useState(null); // 삭제/취소 버튼이 열려 있는 노트
   const [query, setQuery] = useState('');
   const [month, setMonth] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
@@ -233,23 +238,89 @@ function List({ notes, onOpen, onCreate, onSettings }) {
       ) : (
         <ul className="notelist">
           {filtered.map((n) => (
-            <li key={n.id}>
-              <button className="card" onClick={() => onOpen(n.id)}>
-                <div className="card-date">{dateLabel(n.date)}</div>
-                <div className="card-title">{n.title || '(제목 없음)'}</div>
-                {n.passages.length > 0 && <div className="card-ref">{refLabels(n)}</div>}
-                {n.body.trim() && <div className="card-snip">{n.body.trim().slice(0, 80)}</div>}
-              </button>
-            </li>
+            <NoteRow key={n.id} n={n} armed={armedId === n.id} onArm={setArmedId} onOpen={onOpen} onDelete={onDelete} />
           ))}
         </ul>
       )}
       {filtering && filtered.length > 0 && <p className="count">{filtered.length}개의 노트</p>}
+      {notes.length > 0 && <p className="hint">노트를 왼쪽으로 밀면 삭제할 수 있어요</p>}
 
       <button className="fab" onClick={onCreate} aria-label="새 노트">
         ＋
       </button>
     </>
+  );
+}
+
+/* ───────────── 목록의 한 줄 (왼쪽으로 밀면 삭제/취소) ───────────── */
+
+const ACTION_W = 168;
+
+function NoteRow({ n, armed, onArm, onOpen, onDelete }) {
+  const [dx, setDx] = useState(null); // 손가락을 따라 움직이는 중일 때만 값이 있음
+  const t = useRef({ x: 0, y: 0, mode: null, moved: false, dx: 0 });
+  const base = armed ? -ACTION_W : 0;
+  const shift = dx !== null ? dx : base;
+
+  function start(e) {
+    const p = e.touches[0];
+    t.current = { x: p.clientX, y: p.clientY, mode: null, moved: false, dx: base };
+  }
+  function move(e) {
+    const r = t.current;
+    const p = e.touches[0];
+    const ddx = p.clientX - r.x;
+    const ddy = p.clientY - r.y;
+    if (!r.mode) {
+      if (Math.abs(ddx) < 8 && Math.abs(ddy) < 8) return;
+      r.mode = Math.abs(ddx) > Math.abs(ddy) ? 'h' : 'v'; // 가로면 밀기, 세로면 그냥 스크롤
+    }
+    if (r.mode === 'h') {
+      r.moved = true;
+      r.dx = Math.max(-ACTION_W, Math.min(0, base + ddx));
+      setDx(r.dx);
+    }
+  }
+  function end() {
+    const r = t.current;
+    if (r.mode === 'h') onArm(r.dx < -70 ? n.id : null); // 충분히 밀었으면 열어 둠
+    setDx(null);
+    r.mode = null;
+  }
+  function click() {
+    if (t.current.moved) {
+      t.current.moved = false;
+      return;
+    }
+    if (armed) onArm(null);
+    else onOpen(n.id);
+  }
+
+  return (
+    <li className="swipe">
+      <div className={armed || dx !== null ? 'swipe-actions show' : 'swipe-actions'}>
+        <button className="del" onClick={() => onDelete(n.id)}>
+          삭제
+        </button>
+        <button className="cancel" onClick={() => onArm(null)}>
+          취소
+        </button>
+      </div>
+      <button
+        className={dx !== null ? 'card drag' : 'card'}
+        style={{ transform: shift ? `translateX(${shift}px)` : 'none' }}
+        onTouchStart={start}
+        onTouchMove={move}
+        onTouchEnd={end}
+        onTouchCancel={end}
+        onClick={click}
+      >
+        <div className="card-date">{dateLabel(n.date)}</div>
+        <div className="card-title">{n.title || '(제목 없음)'}</div>
+        {n.passages.length > 0 && <div className="card-ref">{refLabels(n)}</div>}
+        {n.body.trim() && <div className="card-snip">{n.body.trim().slice(0, 80)}</div>}
+      </button>
+    </li>
   );
 }
 
