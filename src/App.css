@@ -118,14 +118,16 @@ button.wide { width: 100%; margin-top: 8px; }
 .msg { margin: 6px 2px 0; font-size: 13px; color: var(--muted); }
 .msg.error { color: var(--danger); }
 
-.passage { background: var(--passage-bg); border-radius: 14px; margin: 16px 0; overflow: hidden; }
-.passage-head {
-  width: 100%; display: flex; align-items: baseline; gap: 8px; padding: 14px 16px;
+.passage { background: var(--passage-bg); border-radius: 14px; margin: 12px 0; overflow: hidden; }
+.passage-head { display: flex; align-items: center; padding-right: 8px; }
+.passage-toggle {
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; padding: 14px 8px 14px 16px;
   background: none; border: 0; cursor: pointer; text-align: left;
 }
-.passage-head > span:first-child { font-family: 'Noto Serif KR', serif; font-weight: 600; font-size: 17px; }
-.passage-head .tr { font-size: 12px; color: var(--muted); }
-.passage-head .chev { margin-left: auto; font-size: 12px; color: var(--muted); }
+.pastebox { margin-top: 10px; display: grid; gap: 8px; }
+.passage-name { font-family: 'Noto Serif KR', serif; font-weight: 600; font-size: 17px; }
+.passage-toggle .tr { font-size: 12px; color: var(--muted); }
+.passage-toggle .chev { margin-left: auto; font-size: 12px; color: var(--muted); }
 .passage-body { padding: 0 16px 14px; font-family: 'Noto Serif KR', serif; line-height: 1.95; }
 .passage-body p { margin: 0 0 8px; }
 .passage-body sup { font-size: 11px; color: var(--accent); margin-right: 3px; font-family: -apple-system, sans-serif; }

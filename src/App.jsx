@@ -41,27 +41,46 @@ function newNote() {
   return {
     id: String(Date.now()),
     date: todayStr(),
-    ref: '',
-    refLabel: '',
-    verses: [],
-    manual: '',
-    translation: '',
+    passages: [],
     title: '',
     body: '',
     updatedAt: Date.now(),
   };
 }
+// 옛 버전(말씀 1개) 노트를 새 구조(말씀 여러 개)로 바꿔 줌
+function normalizeNote(n) {
+  if (Array.isArray(n.passages)) return n;
+  const has = (n.verses && n.verses.length) || (n.manual && n.manual.trim()) || n.refLabel || n.ref;
+  const { ref, refLabel, verses, manual, translation, ...rest } = n;
+  return {
+    ...rest,
+    passages: has
+      ? [
+          {
+            id: n.id + '-p0',
+            refLabel: refLabel || ref || '말씀',
+            verses: verses || [],
+            manual: manual || '',
+            translation: translation || '',
+          },
+        ]
+      : [],
+  };
+}
 function isEmpty(n) {
-  return !n.ref && !n.title && !n.body.trim() && !n.verses.length && !n.manual.trim();
+  return !n.passages.length && !n.title && !n.body.trim();
 }
 function passageText(n) {
-  return n.verses.map((v) => v.text).join(' ') + ' ' + n.manual;
+  return n.passages.map((p) => p.refLabel + ' ' + p.verses.map((v) => v.text).join(' ') + ' ' + p.manual).join(' ');
+}
+function refLabels(n) {
+  return n.passages.map((p) => p.refLabel).join(', ');
 }
 
 const SR = typeof window !== 'undefined' ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
 
 export default function App() {
-  const [notes, setNotes] = useState(() => load(NOTES_KEY, []));
+  const [notes, setNotes] = useState(() => load(NOTES_KEY, []).map(normalizeNote));
   const [settings, setSettings] = useState(() => ({ translation: 'KRV', ...load(SETTINGS_KEY, {}) }));
   const [editingId, setEditingId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -152,8 +171,7 @@ function List({ notes, onOpen, onCreate, onSettings }) {
         `${d.getMonth() + 1}월${d.getDate()}일`,
         `${d.getFullYear()}년`,
         n.title,
-        n.refLabel,
-        n.ref,
+        refLabels(n),
         n.body,
         passageText(n),
       ]
@@ -221,7 +239,7 @@ function List({ notes, onOpen, onCreate, onSettings }) {
               <button className="card" onClick={() => onOpen(n.id)}>
                 <div className="card-date">{dateLabel(n.date)}</div>
                 <div className="card-title">{n.title || '(제목 없음)'}</div>
-                {n.refLabel && <div className="card-ref">{n.refLabel}</div>}
+                {n.passages.length > 0 && <div className="card-ref">{refLabels(n)}</div>}
                 {n.body.trim() && <div className="card-snip">{n.body.trim().slice(0, 80)}</div>}
               </button>
             </li>
@@ -240,11 +258,11 @@ function List({ notes, onOpen, onCreate, onSettings }) {
 /* ───────────── 노트 작성 ───────────── */
 
 function Editor({ note, translation, onPatch, onBack, onDelete }) {
-  const [refInput, setRefInput] = useState(note.ref);
+  const [refInput, setRefInput] = useState('');
   const [status, setStatus] = useState({ type: 'idle', msg: '' });
   const [listening, setListening] = useState(false);
-  const [showManual, setShowManual] = useState(false);
-  const [openPassage, setOpenPassage] = useState(true);
+  const [paste, setPaste] = useState(null); // { label, text } — 직접 붙여넣기 입력 중
+  const [closed, setClosed] = useState({}); // 접어 둔 말씀 id
   const bodyRef = useRef(null);
 
   // 받아 적는 칸이 글 길이에 맞춰 늘어나게
@@ -255,6 +273,14 @@ function Editor({ note, translation, onPatch, onBack, onDelete }) {
     el.style.height = Math.max(220, el.scrollHeight) + 'px';
   }, [note.body]);
 
+  function addPassage(p) {
+    onPatch({ passages: [...note.passages, { id: String(Date.now()), translation: '', verses: [], manual: '', ...p }] });
+  }
+  function removePassage(id, label) {
+    if (!window.confirm(`"${label}" 말씀을 이 노트에서 뺄까요?`)) return;
+    onPatch({ passages: note.passages.filter((p) => p.id !== id) });
+  }
+
   async function lookup(text) {
     const input = (text ?? refInput).trim();
     const parsed = parseReference(input);
@@ -263,21 +289,32 @@ function Editor({ note, translation, onPatch, onBack, onDelete }) {
       return;
     }
     const label = formatReference(parsed);
-    setRefInput(label);
+    if (note.passages.some((p) => p.refLabel === label)) {
+      setStatus({ type: 'error', msg: `${label}은(는) 이미 추가되어 있어요.` });
+      return;
+    }
     setStatus({ type: 'loading', msg: `${label} 찾는 중…` });
     try {
       const verses = await fetchPassage(parsed, translation);
-      onPatch({ ref: label, refLabel: label, verses, translation, manual: '' });
+      addPassage({ refLabel: label, verses, translation });
+      setRefInput('');
+      setPaste(null);
       setStatus({ type: 'idle', msg: '' });
-      setOpenPassage(true);
     } catch (e) {
-      onPatch({ ref: label, refLabel: label });
       setStatus({
         type: 'error',
-        msg: `본문을 불러오지 못했어요 (${e.message}). 아래 "직접 붙여넣기"로 넣을 수 있어요.`,
+        msg: `본문을 불러오지 못했어요 (${e.message}). 아래에 직접 붙여넣어 추가할 수 있어요.`,
       });
-      setShowManual(true);
+      setPaste({ label, text: '' });
     }
+  }
+
+  function submitPaste() {
+    if (!paste.text.trim()) return;
+    addPassage({ refLabel: paste.label || '직접 입력', manual: paste.text.trim() });
+    setPaste(null);
+    setRefInput('');
+    setStatus({ type: 'idle', msg: '' });
   }
 
   function startVoice() {
@@ -310,9 +347,6 @@ function Editor({ note, translation, onPatch, onBack, onDelete }) {
     }
   }
 
-  const hasPassage = note.verses.length > 0 || note.manual.trim();
-  const multiChapter = note.verses.length > 0 && note.verses[0].c !== note.verses[note.verses.length - 1].c;
-
   return (
     <>
       <header className="topbar">
@@ -338,14 +372,14 @@ function Editor({ note, translation, onPatch, onBack, onDelete }) {
       </div>
 
       <div className="field">
-        <label>본문 말씀</label>
+        <label>본문 말씀 {note.passages.length > 0 && '(여러 개 추가할 수 있어요)'}</label>
         <div className="row">
           <input
             type="text"
             value={refInput}
             onChange={(e) => setRefInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && lookup()}
-            placeholder="예: 요한복음 3장 16절"
+            placeholder={note.passages.length ? '다른 말씀 추가: 예) 이사야 41장 10절' : '예: 요한복음 3장 16절'}
             enterKeyHint="search"
             autoCapitalize="off"
             autoCorrect="off"
@@ -356,10 +390,38 @@ function Editor({ note, translation, onPatch, onBack, onDelete }) {
             </button>
           )}
           <button className="primary" onClick={() => lookup()} disabled={status.type === 'loading'}>
-            찾기
+            {note.passages.length ? '추가' : '찾기'}
           </button>
         </div>
         {status.msg && <p className={status.type === 'error' ? 'msg error' : 'msg'}>{status.msg}</p>}
+        {!paste && (
+          <button className="linkbtn" onClick={() => setPaste({ label: refInput.trim(), text: '' })}>
+            직접 붙여넣어 추가
+          </button>
+        )}
+        {paste && (
+          <div className="pastebox">
+            <input
+              type="text"
+              value={paste.label}
+              onChange={(e) => setPaste({ ...paste, label: e.target.value })}
+              placeholder="말씀 이름 (예: 히브리서 12:2)"
+            />
+            <textarea
+              className="manual"
+              value={paste.text}
+              onChange={(e) => setPaste({ ...paste, text: e.target.value })}
+              placeholder="다른 성경앱에서 복사한 본문을 여기에 붙여넣어요"
+              rows={4}
+            />
+            <div className="row">
+              <button className="primary" onClick={submitPaste}>
+                말씀 추가
+              </button>
+              <button onClick={() => setPaste(null)}>취소</button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="field">
@@ -372,41 +434,46 @@ function Editor({ note, translation, onPatch, onBack, onDelete }) {
         />
       </div>
 
-      <section className="passage">
-        <button className="passage-head" onClick={() => setOpenPassage(!openPassage)}>
-          <span>{note.refLabel || '오늘의 말씀'}</span>
-          <span className="tr">{note.translation && note.verses.length ? note.translation : ''}</span>
-          <span className="chev">{openPassage ? '접기 ▲' : '펼치기 ▼'}</span>
-        </button>
-        {openPassage && (
+      {note.passages.length === 0 && (
+        <section className="passage">
           <div className="passage-body">
-            {note.verses.length > 0 && (
-              <p>
-                {note.verses.map((v, i) => (
-                  <span key={i}>
-                    <sup>{multiChapter && (i === 0 || v.c !== note.verses[i - 1].c) ? `${v.c}:${v.v}` : v.v}</sup>
-                    {v.text}{' '}
-                  </span>
-                ))}
-              </p>
-            )}
-            {note.manual.trim() && !showManual && <p>{note.manual}</p>}
-            {!hasPassage && <p className="placeholder">위에서 구절을 찾으면 본문이 여기에 나타나요.</p>}
-            <button className="linkbtn" onClick={() => setShowManual(!showManual)}>
-              {showManual ? '직접 붙여넣기 닫기' : '직접 붙여넣기'}
-            </button>
-            {showManual && (
-              <textarea
-                className="manual"
-                value={note.manual}
-                onChange={(e) => onPatch({ manual: e.target.value })}
-                placeholder="다른 성경앱에서 복사한 본문을 여기에 붙여넣어요"
-                rows={5}
-              />
-            )}
+            <p className="placeholder">위에서 구절을 찾으면 본문이 여기에 나타나요.</p>
           </div>
-        )}
-      </section>
+        </section>
+      )}
+      {note.passages.map((p) => {
+        const open = !closed[p.id];
+        const multi = p.verses.length > 0 && p.verses[0].c !== p.verses[p.verses.length - 1].c;
+        return (
+          <section className="passage" key={p.id}>
+            <div className="passage-head">
+              <button className="passage-toggle" onClick={() => setClosed({ ...closed, [p.id]: open })}>
+                <span className="passage-name">{p.refLabel}</span>
+                <span className="tr">{p.verses.length ? p.translation : ''}</span>
+                <span className="chev">{open ? '접기 ▲' : '펼치기 ▼'}</span>
+              </button>
+              <button className="icon-btn danger" onClick={() => removePassage(p.id, p.refLabel)} aria-label="이 말씀 빼기">
+                ✕
+              </button>
+            </div>
+            {open && (
+              <div className="passage-body">
+                {p.verses.length > 0 && (
+                  <p>
+                    {p.verses.map((v, i) => (
+                      <span key={i}>
+                        <sup>{multi && (i === 0 || v.c !== p.verses[i - 1].c) ? `${v.c}:${v.v}` : v.v}</sup>
+                        {v.text}{' '}
+                      </span>
+                    ))}
+                  </p>
+                )}
+                {p.manual.trim() && <p>{p.manual}</p>}
+              </div>
+            )}
+          </section>
+        );
+      })}
 
       <div className="field">
         <label>받아 적기</label>
@@ -447,7 +514,7 @@ function Settings({ settings, setSettings, notes, setNotes, onClose }) {
         const incoming = Array.isArray(data) ? data : data.notes;
         if (!Array.isArray(incoming)) throw new Error();
         const have = new Set(notes.map((n) => n.id));
-        const add = incoming.filter((n) => n && n.id && n.date && !have.has(n.id));
+        const add = incoming.filter((n) => n && n.id && n.date && !have.has(n.id)).map(normalizeNote);
         setNotes((prev) => [...prev, ...add]);
         setMsg(`${add.length}개의 노트를 가져왔어요.`);
       } catch {
