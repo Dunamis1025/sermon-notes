@@ -3,10 +3,10 @@ import PassagePicker from './PassagePicker';
 import SyncPanel from './SyncPanel';
 import { useCloudSync } from './sync';
 import { firebaseConfig } from './firebaseConfig';
+import { t, setLang, detectLang, locale, getLang } from './i18n';
 
 const NOTES_KEY = 'sermon-notes-v1';
 const SETTINGS_KEY = 'sermon-settings-v1';
-const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 // 화면 분위기 (색은 App.css의 data-theme와 같게 유지)
 const THEMES = [
@@ -51,11 +51,11 @@ function parseDate(s) {
 }
 function dateLabel(s) {
   const d = parseDate(s);
-  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${DAYS[d.getDay()]}요일`;
+  return d.toLocaleDateString(locale(), { month: 'long', day: 'numeric', weekday: 'long' });
 }
 function monthLabel(ym) {
   const [y, m] = ym.split('-');
-  return `${y}년 ${Number(m)}월`;
+  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString(locale(), { year: 'numeric', month: 'long' });
 }
 
 function newNote() {
@@ -107,7 +107,13 @@ const TRANSLATIONS = [
 
 export default function App() {
   const [notes, setNotes] = useState(() => load(NOTES_KEY, []).map(normalizeNote));
-  const [settings, setSettings] = useState(() => ({ translation: 'KRV', theme: 'fresh', ...load(SETTINGS_KEY, {}) }));
+  const [settings, setSettings] = useState(() => {
+    const stored = load(SETTINGS_KEY, {});
+    // 이미 쓰던 사람은 한국어 그대로, 처음 쓰는 사람은 기기 언어를 따라감
+    const lang = stored.lang || (Object.keys(stored).length || notes.length ? 'ko' : detectLang());
+    return { translation: lang === 'en' ? 'NIV' : 'KRV', theme: 'fresh', ...stored, lang };
+  });
+  setLang(settings.lang); // 화면을 그리기 전에 언어 적용
   const [editingId, setEditingId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -174,7 +180,7 @@ export default function App() {
   function saveNow() {
     const ok = writeNotes(notesRef.current);
     markSaved(ok);
-    setToast(ok ? '✓ 저장했어요' : '저장하지 못했어요. 기기 저장 공간을 확인해 주세요');
+    setToast(ok ? t('✓ 저장했어요') : t('저장하지 못했어요. 기기 저장 공간을 확인해 주세요'));
   }
   useEffect(() => {
     if (!toast) return undefined;
@@ -186,9 +192,10 @@ export default function App() {
   useEffect(() => {
     const t = THEMES.find((x) => x.id === settings.theme) || THEMES[0];
     document.documentElement.setAttribute('data-theme', t.id);
+    document.documentElement.lang = settings.lang;
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', t.bg);
-  }, [settings.theme]);
+  }, [settings.theme, settings.lang]);
 
   const editing = notes.find((n) => n.id === editingId) || null;
 
@@ -210,7 +217,7 @@ export default function App() {
     setNotes((prev) => prev.filter((n) => n.id !== id));
   }
   function deleteNote(id) {
-    if (!window.confirm('이 노트를 삭제할까요? 되돌릴 수 없어요.')) return;
+    if (!window.confirm(t('이 노트를 삭제할까요? 되돌릴 수 없어요.'))) return;
     setNotes((prev) => prev.filter((n) => n.id !== id));
     setEditingId(null);
   }
@@ -285,6 +292,7 @@ function List({ notes, onOpen, onCreate, onDelete, onSettings }) {
         `${d.getMonth() + 1}월 ${d.getDate()}일`,
         `${d.getMonth() + 1}월${d.getDate()}일`,
         `${d.getFullYear()}년`,
+        dateLabel(n.date),
         n.title,
         refLabels(n),
         n.body,
@@ -301,8 +309,8 @@ function List({ notes, onOpen, onCreate, onDelete, onSettings }) {
   return (
     <>
       <header className="topbar">
-        <h1>설교 노트</h1>
-        <button className="icon-btn" onClick={onSettings} aria-label="설정">
+        <h1>{t('설교 노트')}</h1>
+        <button className="icon-btn" onClick={onSettings} aria-label={t('설정')}>
           ⚙︎
         </button>
       </header>
@@ -312,9 +320,9 @@ function List({ notes, onOpen, onCreate, onDelete, onSettings }) {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="날짜 · 제목 · 말씀 · 내용으로 찾기"
+          placeholder={t('날짜 · 제목 · 말씀 · 내용으로 찾기')}
         />
-        <label className="datepick" title="날짜로 찾기">
+        <label className="datepick" title={t('날짜로 찾기')}>
           📅
           <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} />
         </label>
@@ -323,7 +331,7 @@ function List({ notes, onOpen, onCreate, onDelete, onSettings }) {
       {months.length > 0 && (
         <div className="chips">
           <button className={month === 'all' ? 'chip on' : 'chip'} onClick={() => setMonth('all')}>
-            전체
+            {t('전체')}
           </button>
           {months.map((m) => (
             <button key={m} className={month === m ? 'chip on' : 'chip'} onClick={() => setMonth(m)}>
@@ -334,18 +342,18 @@ function List({ notes, onOpen, onCreate, onDelete, onSettings }) {
       )}
       {dateFilter && (
         <button className="linkbtn" onClick={() => setDateFilter('')}>
-          {dateLabel(dateFilter)} 필터 해제 ✕
+          {t('{d} 필터 해제 ✕', { d: dateLabel(dateFilter) })}
         </button>
       )}
 
       {notes.length === 0 ? (
         <div className="empty">
-          <p>아직 노트가 없어요.</p>
-          <p className="sub">아래 + 버튼으로 오늘 설교를 시작해 보세요.</p>
+          <p>{t('아직 노트가 없어요.')}</p>
+          <p className="sub">{t('아래 + 버튼으로 오늘 설교를 시작해 보세요.')}</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="empty">
-          <p>찾는 노트가 없어요.</p>
+          <p>{t('찾는 노트가 없어요.')}</p>
         </div>
       ) : (
         <ul className="notelist">
@@ -354,10 +362,10 @@ function List({ notes, onOpen, onCreate, onDelete, onSettings }) {
           ))}
         </ul>
       )}
-      {filtering && filtered.length > 0 && <p className="count">{filtered.length}개의 노트</p>}
-      {notes.length > 0 && <p className="hint">노트를 왼쪽으로 밀면 삭제할 수 있어요</p>}
+      {filtering && filtered.length > 0 && <p className="count">{t('{n}개의 노트', { n: filtered.length })}</p>}
+      {notes.length > 0 && <p className="hint">{t('노트를 왼쪽으로 밀면 삭제할 수 있어요')}</p>}
 
-      <button className="fab" onClick={onCreate} aria-label="새 노트">
+      <button className="fab" onClick={onCreate} aria-label={t('새 노트')}>
         ＋
       </button>
     </>
@@ -370,16 +378,16 @@ const ACTION_W = 168;
 
 function NoteRow({ n, armed, onArm, onOpen, onDelete }) {
   const [dx, setDx] = useState(null); // 손가락을 따라 움직이는 중일 때만 값이 있음
-  const t = useRef({ x: 0, y: 0, mode: null, moved: false, dx: 0 });
+  const tr = useRef({ x: 0, y: 0, mode: null, moved: false, dx: 0 });
   const base = armed ? -ACTION_W : 0;
   const shift = dx !== null ? dx : base;
 
   function start(e) {
     const p = e.touches[0];
-    t.current = { x: p.clientX, y: p.clientY, mode: null, moved: false, dx: base };
+    tr.current = { x: p.clientX, y: p.clientY, mode: null, moved: false, dx: base };
   }
   function move(e) {
-    const r = t.current;
+    const r = tr.current;
     const p = e.touches[0];
     const ddx = p.clientX - r.x;
     const ddy = p.clientY - r.y;
@@ -394,14 +402,14 @@ function NoteRow({ n, armed, onArm, onOpen, onDelete }) {
     }
   }
   function end() {
-    const r = t.current;
+    const r = tr.current;
     if (r.mode === 'h') onArm(r.dx < -70 ? n.id : null); // 충분히 밀었으면 열어 둠
     setDx(null);
     r.mode = null;
   }
   function click() {
-    if (t.current.moved) {
-      t.current.moved = false;
+    if (tr.current.moved) {
+      tr.current.moved = false;
       return;
     }
     if (armed) onArm(null);
@@ -412,10 +420,10 @@ function NoteRow({ n, armed, onArm, onOpen, onDelete }) {
     <li className="swipe">
       <div className={armed || dx !== null ? 'swipe-actions show' : 'swipe-actions'}>
         <button className="del" onClick={() => onDelete(n.id)}>
-          삭제
+          {t('삭제')}
         </button>
         <button className="cancel" onClick={() => onArm(null)}>
-          취소
+          {t('취소')}
         </button>
       </div>
       <button
@@ -428,7 +436,7 @@ function NoteRow({ n, armed, onArm, onOpen, onDelete }) {
         onClick={click}
       >
         <div className="card-date">{dateLabel(n.date)}</div>
-        <div className="card-title">{n.title || '(제목 없음)'}</div>
+        <div className="card-title">{n.title || t('(제목 없음)')}</div>
         {n.passages.length > 0 && <div className="card-ref">{refLabels(n)}</div>}
         {n.body.trim() && <div className="card-snip">{n.body.trim().slice(0, 80)}</div>}
       </button>
@@ -456,7 +464,7 @@ function Editor({ note, translation, onPatch, onBack, onDelete, saveState, saved
     onPatch({ passages: [...note.passages, { id: String(Date.now()), translation: '', verses: [], manual: '', ...p }] });
   }
   function removePassage(id, label) {
-    if (!window.confirm(`"${label}" 말씀을 이 노트에서 뗄까요?`)) return;
+    if (!window.confirm(t('"{label}" 말씀을 이 노트에서 뗄까요?', { label }))) return;
     onPatch({ passages: note.passages.filter((p) => p.id !== id) });
   }
   function pin(p) {
@@ -469,7 +477,7 @@ function Editor({ note, translation, onPatch, onBack, onDelete, saveState, saved
   }
   function submitPaste() {
     if (!paste.text.trim()) return;
-    addPassage({ refLabel: paste.label.trim() || '직접 입력', manual: paste.text.trim() });
+    addPassage({ refLabel: paste.label.trim() || t('직접 입력'), manual: paste.text.trim() });
     setMode(null);
   }
 
@@ -477,27 +485,27 @@ function Editor({ note, translation, onPatch, onBack, onDelete, saveState, saved
     <>
       <header className="topbar sticky">
         <button className="back" onClick={onBack}>
-          ‹ 목록
+          {t('‹ 목록')}
         </button>
         <div className="savebox">
           <span className={`savestate ${saveState}`}>
             {saveState === 'saved'
-              ? `✓ 저장됨${savedAt ? ' ' + new Date(savedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : ''}`
+              ? `${t('✓ 저장됨')}${savedAt ? ' ' + new Date(savedAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) : ''}`
               : saveState === 'pending'
-              ? '저장 중…'
-              : '⚠ 저장 실패'}
+              ? t('저장 중…')
+              : t('⚠ 저장 실패')}
           </span>
           <button className="primary small" onClick={onSave}>
-            저장
+            {t('저장')}
           </button>
         </div>
-        <button className="icon-btn danger" onClick={onDelete} aria-label="삭제">
+        <button className="icon-btn danger" onClick={onDelete} aria-label={t('삭제')}>
           🗑
         </button>
       </header>
 
       <div className="field">
-        <label>날짜</label>
+        <label>{t('날짜')}</label>
         <div className="row">
           <input
             type="date"
@@ -509,17 +517,17 @@ function Editor({ note, translation, onPatch, onBack, onDelete, saveState, saved
       </div>
 
       <div className="field">
-        <label>설교 제목</label>
+        <label>{t('설교 제목')}</label>
         <input
           type="text"
           value={note.title}
           onChange={(e) => onPatch({ title: e.target.value })}
-          placeholder="주보에 적힌 제목"
+          placeholder={t('주보에 적힌 제목')}
         />
       </div>
 
       <div className="field">
-        <label>본문 말씀</label>
+        <label>{t('본문 말씀')}</label>
         {note.passages.map((p, i) => {
           const open = !closed[p.id];
           const multi = p.verses.length > 0 && p.verses[0].c !== p.verses[p.verses.length - 1].c;
@@ -529,9 +537,9 @@ function Editor({ note, translation, onPatch, onBack, onDelete, saveState, saved
                 <button className="postit-toggle" onClick={() => setClosed({ ...closed, [p.id]: open })}>
                   <span className="postit-name">📌 {p.refLabel}</span>
                   <span className="tr">{p.verses.length ? p.translation : ''}</span>
-                  <span className="chev">{open ? '접기 ▲' : '펼치기 ▼'}</span>
+                  <span className="chev">{open ? t('접기 ▲') : t('펼치기 ▼')}</span>
                 </button>
-                <button className="icon-btn danger" onClick={() => removePassage(p.id, p.refLabel)} aria-label="이 말씀 떼기">
+                <button className="icon-btn danger" onClick={() => removePassage(p.id, p.refLabel)} aria-label={t('이 말씀 떼기')}>
                   ✕
                 </button>
               </div>
@@ -569,41 +577,41 @@ function Editor({ note, translation, onPatch, onBack, onDelete, saveState, saved
               type="text"
               value={paste.label}
               onChange={(e) => setPaste({ ...paste, label: e.target.value })}
-              placeholder="말씀 이름 (예: 히브리서 12:2)"
+              placeholder={t('말씀 이름 (예: 히브리서 12:2)')}
             />
             <textarea
               className="manual"
               value={paste.text}
               onChange={(e) => setPaste({ ...paste, text: e.target.value })}
-              placeholder="다른 성경앱에서 복사한 본문을 여기에 붙여넣어요"
+              placeholder={t('다른 성경앱에서 복사한 본문을 여기에 붙여넣어요')}
               rows={4}
             />
             <div className="row">
               <button className="primary" onClick={submitPaste}>
-                말씀 붙이기
+                {t('말씀 붙이기')}
               </button>
-              <button onClick={() => setMode(null)}>취소</button>
+              <button onClick={() => setMode(null)}>{t('취소')}</button>
             </div>
           </div>
         )}
         {mode === null && (
           <div className="row addbar">
             <button className="primary" onClick={() => setMode('pick')}>
-              ＋ 말씀 {note.passages.length ? '더 ' : ''}붙이기
+              {note.passages.length ? t('＋ 말씀 더 붙이기') : t('＋ 말씀 붙이기')}
             </button>
-            <button onClick={() => openPaste('')}>직접 붙여넣기</button>
+            <button onClick={() => openPaste('')}>{t('직접 붙여넣기')}</button>
           </div>
         )}
       </div>
 
       <div className="field">
-        <label>받아 적기</label>
+        <label>{t('받아 적기')}</label>
         <textarea
           ref={bodyRef}
           className="body"
           value={note.body}
           onChange={(e) => onPatch({ body: e.target.value })}
-          placeholder="말씀을 들으며 감동받은 부분, 요점을 적어 보세요"
+          placeholder={t('말씀을 들으며 감동받은 부분, 요점을 적어 보세요')}
         />
       </div>
     </>
@@ -616,6 +624,13 @@ function Settings({ settings, setSettings, notes, setNotes, cloud, user, sync, o
   const fileRef = useRef(null);
   const [msg, setMsg] = useState('');
 
+  function changeLang(code) {
+    // 번역이 그 언어의 기본값이었다면 함께 바꿔 줌
+    const def = { ko: 'KRV', en: 'NIV' };
+    const translation = settings.translation === def[settings.lang] ? def[code] : settings.translation;
+    setSettings({ ...settings, lang: code, translation });
+  }
+
   async function exportAll() {
     const name = `sermon-notes-${todayStr()}.json`;
     const text = JSON.stringify({ app: 'sermon-notes', notes }, null, 2);
@@ -623,7 +638,7 @@ function Settings({ settings, setSettings, notes, setNotes, cloud, user, sync, o
     try {
       const file = new File([text], name, { type: 'application/json' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: '설교 노트 백업' });
+        await navigator.share({ files: [file], title: t('설교 노트 백업') });
         return;
       }
     } catch (e) {
@@ -648,9 +663,9 @@ function Settings({ settings, setSettings, notes, setNotes, cloud, user, sync, o
         const have = new Set(notes.map((n) => n.id));
         const add = incoming.filter((n) => n && n.id && n.date && !have.has(n.id)).map(normalizeNote);
         setNotes((prev) => [...prev, ...add]);
-        setMsg(`${add.length}개의 노트를 가져왔어요.`);
+        setMsg(t('{n}개의 노트를 가져왔어요.', { n: add.length }));
       } catch {
-        setMsg('파일을 읽지 못했어요.');
+        setMsg(t('파일을 읽지 못했어요.'));
       }
     };
     reader.readAsText(f);
@@ -660,45 +675,60 @@ function Settings({ settings, setSettings, notes, setNotes, cloud, user, sync, o
   return (
     <div className="overlay" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <h2>설정</h2>
+        <h2>{t('설정')}</h2>
 
         <div className="field">
-          <label>화면 분위기</label>
+          <label>{t('화면 분위기')}</label>
           <div className="themes">
-            {THEMES.map((t) => (
+            {THEMES.map((th) => (
               <button
-                key={t.id}
-                className={settings.theme === t.id ? 'theme on' : 'theme'}
-                onClick={() => setSettings({ ...settings, theme: t.id })}
+                key={th.id}
+                className={settings.theme === th.id ? 'theme on' : 'theme'}
+                onClick={() => setSettings({ ...settings, theme: th.id })}
               >
-                <span className="swatch" style={{ background: t.bg }}>
-                  <span className="sw-card" style={{ background: t.card }}>
-                    <i style={{ background: t.accent }} />
-                    <b style={{ background: t.ink }} />
+                <span className="swatch" style={{ background: th.bg }}>
+                  <span className="sw-card" style={{ background: th.card }}>
+                    <i style={{ background: th.accent }} />
+                    <b style={{ background: th.ink }} />
                   </span>
                 </span>
-                <span className="tname">{t.name}</span>
-                <span className="tdesc">{t.desc}</span>
+                <span className="tname">{t(th.name)}</span>
+                <span className="tdesc">{t(th.desc)}</span>
               </button>
             ))}
           </div>
         </div>
 
         <div className="field">
-          <label>성경 번역</label>
+          <label>{t('화면 언어')}</label>
           <div className="row">
-            {TRANSLATIONS.map((t) => (
+            {[['ko', '한국어'], ['en', 'English']].map(([code, name]) => (
               <button
-                key={t.code}
-                className={settings.translation === t.code ? 'primary' : ''}
-                onClick={() => setSettings({ ...settings, translation: t.code })}
+                key={code}
+                className={settings.lang === code ? 'primary' : ''}
+                onClick={() => changeLang(code)}
               >
-                {t.name}
+                {name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field">
+          <label>{t('성경 번역')}</label>
+          <div className="row">
+            {TRANSLATIONS.map((th) => (
+              <button
+                key={th.code}
+                className={settings.translation === th.code ? 'primary' : ''}
+                onClick={() => setSettings({ ...settings, translation: th.code })}
+              >
+                {t(th.name)}
               </button>
             ))}
           </div>
           <p className="msg">
-            새로 붙이는 말씀부터 선택한 번역으로 가져와요. 이미 붙인 말씀은 그대로예요. 다른 번역을 쓰려면 아래에 코드를 직접 입력하세요.
+            {t('새로 붙이는 말씀부터 선택한 번역으로 가져와요. 이미 붙인 말씀은 그대로예요. 다른 번역을 쓰려면 아래에 코드를 직접 입력하세요.')}
           </p>
           <input
             type="text"
@@ -712,18 +742,18 @@ function Settings({ settings, setSettings, notes, setNotes, cloud, user, sync, o
         <SyncPanel cloud={cloud} user={user} sync={sync} />
 
         <div className="field">
-          <label>백업</label>
+          <label>{t('백업')}</label>
           <div className="row">
-            <button onClick={exportAll}>내보내기</button>
-            <button onClick={() => fileRef.current.click()}>가져오기</button>
+            <button onClick={exportAll}>{t('내보내기')}</button>
+            <button onClick={() => fileRef.current.click()}>{t('가져오기')}</button>
             <input ref={fileRef} type="file" accept="application/json" onChange={importAll} hidden />
           </div>
-          <p className="msg">노트는 이 기기에만 저장돼요. 가끔 내보내기로 백업해 두면 안전해요.</p>
+          <p className="msg">{t('노트는 이 기기에만 저장돼요. 가끔 내보내기로 백업해 두면 안전해요.')}</p>
           {msg && <p className="msg">{msg}</p>}
         </div>
 
         <button className="primary wide" onClick={onClose}>
-          닫기
+          {t('닫기')}
         </button>
       </div>
     </div>

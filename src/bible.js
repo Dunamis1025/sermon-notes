@@ -1,3 +1,5 @@
+import { t, getLang } from './i18n';
+
 // 성경 구절 파싱 + 본문 가져오기
 // - "요한복음 3장 16절", "요 3:16-21", "시편 23편", "롬 8:28~30" 같은 입력을 이해함
 // - 음성 인식 결과("요한복음 3장 16절부터 21절까지")도 처리
@@ -72,6 +74,81 @@ export const BOOKS = [
   [66, '요한계시록', ['계', '계시록']],
 ];
 
+
+// 영어 책 이름 + 약어 (한국어 이름과 함께 항상 검색됨)
+const EN_BOOKS = [
+  ['Genesis', ['gen', 'ge', 'gn']],
+  ['Exodus', ['exo', 'ex', 'exod']],
+  ['Leviticus', ['lev', 'le', 'lv']],
+  ['Numbers', ['num', 'nu', 'nm']],
+  ['Deuteronomy', ['deut', 'dt', 'deu']],
+  ['Joshua', ['josh', 'jos']],
+  ['Judges', ['judg', 'jdg']],
+  ['Ruth', ['rut', 'ru']],
+  ['1 Samuel', ['1sam', '1sa']],
+  ['2 Samuel', ['2sam', '2sa']],
+  ['1 Kings', ['1ki', '1kgs']],
+  ['2 Kings', ['2ki', '2kgs']],
+  ['1 Chronicles', ['1chr', '1ch']],
+  ['2 Chronicles', ['2chr', '2ch']],
+  ['Ezra', ['ezr']],
+  ['Nehemiah', ['neh']],
+  ['Esther', ['est', 'esth']],
+  ['Job', ['jb']],
+  ['Psalms', ['ps', 'psa', 'psalm', 'pslm']],
+  ['Proverbs', ['prov', 'pro', 'prv']],
+  ['Ecclesiastes', ['eccl', 'ecc']],
+  ['Song of Solomon', ['song', 'sos', 'songofsongs']],
+  ['Isaiah', ['isa']],
+  ['Jeremiah', ['jer']],
+  ['Lamentations', ['lam']],
+  ['Ezekiel', ['ezek', 'eze']],
+  ['Daniel', ['dan']],
+  ['Hosea', ['hos']],
+  ['Joel', ['joe']],
+  ['Amos', ['amo']],
+  ['Obadiah', ['obad', 'oba']],
+  ['Jonah', ['jon']],
+  ['Micah', ['mic']],
+  ['Nahum', ['nah']],
+  ['Habakkuk', ['hab']],
+  ['Zephaniah', ['zeph', 'zep']],
+  ['Haggai', ['hag']],
+  ['Zechariah', ['zech', 'zec']],
+  ['Malachi', ['mal']],
+  ['Matthew', ['matt', 'mat', 'mt']],
+  ['Mark', ['mrk', 'mk']],
+  ['Luke', ['luk', 'lk']],
+  ['John', ['joh', 'jn']],
+  ['Acts', ['act', 'ac']],
+  ['Romans', ['rom', 'ro']],
+  ['1 Corinthians', ['1cor', '1co']],
+  ['2 Corinthians', ['2cor', '2co']],
+  ['Galatians', ['gal']],
+  ['Ephesians', ['eph']],
+  ['Philippians', ['phil', 'php']],
+  ['Colossians', ['col']],
+  ['1 Thessalonians', ['1thess', '1th']],
+  ['2 Thessalonians', ['2thess', '2th']],
+  ['1 Timothy', ['1tim', '1ti']],
+  ['2 Timothy', ['2tim', '2ti']],
+  ['Titus', ['tit']],
+  ['Philemon', ['philem', 'phm']],
+  ['Hebrews', ['heb']],
+  ['James', ['jas', 'jm']],
+  ['1 Peter', ['1pet', '1pe']],
+  ['2 Peter', ['2pet', '2pe']],
+  ['1 John', ['1jn', '1jo', '1joh']],
+  ['2 John', ['2jn', '2jo', '2joh']],
+  ['3 John', ['3jn', '3jo', '3joh']],
+  ['Jude', ['jud']],
+  ['Revelation', ['rev', 'rv', 'revelations']],
+];
+const flat = (x) => x.toLowerCase().replace(/\s+/g, '');
+
+// 지금 화면 언어에 맞는 책 이름
+export const bookDisplay = (id) => (getLang() === 'en' ? EN_BOOKS[id - 1][0] : BOOKS[id - 1][1]);
+
 // 장이 하나뿐인 책 (오바댜, 빌레몬서, 요한이서, 요한삼서, 유다서)
 const SINGLE_CHAPTER = new Set([31, 57, 63, 64, 65]);
 
@@ -83,12 +160,12 @@ export const CHAPTERS = [
 
 // 자동완성: 앞글자가 이름·약어와 맞는 책 번호들 (성경 순서, 최대 8개)
 export function suggestBooks(q) {
-  const s = (q || '').replace(/\s+/g, '');
+  const s = (q || '').replace(/\s+/g, '').toLowerCase();
   if (!s) return [];
   const exact = []; // 약어·이름이 정확히 같은 책 (예: 요 → 요한복음)
   const prefix = [];
   for (const [id, name, abbrs] of BOOKS) {
-    const keys = [name, ...abbrs];
+    const keys = [name, ...abbrs, flat(EN_BOOKS[id - 1][0]), ...EN_BOOKS[id - 1][1]];
     const m = name.match(/^(.{2,})(복음|서|기)$/);
     if (m) keys.push(m[1]);
     if (keys.includes(s)) exact.push(id);
@@ -105,6 +182,8 @@ const ALIASES = (() => {
     const m = name.match(/^(.{2,})(복음|서|기)$/);
     if (m) names.add(m[1]);
     for (const n of names) list.push([n, id]);
+    list.push([flat(EN_BOOKS[id - 1][0]), id]);
+    for (const n of EN_BOOKS[id - 1][1]) list.push([n, id]);
   }
   // 많이 쓰는 표기 추가
   list.push(['열왕기상', 11], ['열왕기하', 12], ['데살로니가전', 52], ['데살로니가후', 53]);
@@ -113,14 +192,13 @@ const ALIASES = (() => {
   return list;
 })();
 
-const BOOK_NAME = Object.fromEntries(BOOKS.map(([id, name]) => [id, name]));
 
 // 입력 문자열 앞부분이 alias와 맞으면 소비한 글자 수를 돌려줌 (공백은 건너뜀)
 function consumeAlias(s, alias) {
   let i = 0;
   for (const ch of alias) {
     while (s[i] === ' ') i++;
-    if (s[i] !== ch) return -1;
+    if (s[i] === undefined || s[i].toLowerCase() !== ch) return -1;
     i++;
   }
   return i;
@@ -128,7 +206,7 @@ function consumeAlias(s, alias) {
 
 export function parseReference(input) {
   const s = (input || '').trim();
-  if (!s) return { error: '말씀 구절을 입력해 주세요. 예: 요한복음 3:16' };
+  if (!s) return { error: t('말씀 구절을 입력해 주세요. 예: 요한복음 3:16') };
 
   let bookId = null;
   let used = 0;
@@ -140,7 +218,7 @@ export function parseReference(input) {
       break;
     }
   }
-  if (!bookId) return { error: '책 이름을 찾지 못했어요. 예: 요한복음, 요, 롬, 시편' };
+  if (!bookId) return { error: t('책 이름을 찾지 못했어요. 예: 요한복음, 요, 롬, 시편') };
 
   let r = s
     .slice(used)
@@ -188,30 +266,32 @@ export function parseReference(input) {
     c1 = c2 = 1;
     v1 = v2 = null;
   } else {
-    return { error: '장과 절을 이해하지 못했어요. 예: 요한복음 3장 16절' };
+    return { error: t('장과 절을 이해하지 못했어요. 예: 요한복음 3장 16절') };
   }
 
   const maxC = CHAPTERS[bookId - 1];
   if (c1 < 1 || c2 > maxC) {
-    return { error: `${BOOK_NAME[bookId]}은(는) ${maxC}${bookId === 19 ? '편' : '장'}까지 있어요.` };
+    return { error: t('{b}은(는) {n}{u}까지 있어요.', { b: bookDisplay(bookId), n: maxC, u: getLang() === 'en' ? 'chapters' : bookId === 19 ? '편' : '장' }) };
   }
   if (c2 < c1 || (c1 === c2 && v1 != null && v2 < v1)) {
-    return { error: '범위가 거꾸로 되어 있어요. 시작이 끝보다 앞이어야 해요.' };
+    return { error: t('범위가 거꾸로 되어 있어요. 시작이 끝보다 앞이어야 해요.') };
   }
-  if (c2 - c1 > 9) return { error: '한 번에 10장까지만 찾을 수 있어요.' };
+  if (c2 - c1 > 9) return { error: t('한 번에 10장까지만 찾을 수 있어요.') };
 
-  return { book: bookId, bookName: BOOK_NAME[bookId], c1, v1, c2, v2 };
+  return { book: bookId, bookName: bookDisplay(bookId), c1, v1, c2, v2 };
 }
 
 export function formatReference(p) {
   const name = p.bookName;
-  const unit = p.book === 19 ? '편' : '장';
+  const en = getLang() === 'en';
+  const unit = en ? '' : p.book === 19 ? '편' : '장';
+  const vs = en ? '' : '절';
   if (p.v1 == null) {
     if (SINGLE_CHAPTER.has(p.book)) return name;
     return p.c1 === p.c2 ? `${name} ${p.c1}${unit}` : `${name} ${p.c1}-${p.c2}${unit}`;
   }
   if (SINGLE_CHAPTER.has(p.book)) {
-    return p.v1 === p.v2 ? `${name} ${p.v1}절` : `${name} ${p.v1}-${p.v2}절`;
+    return p.v1 === p.v2 ? `${name} ${p.v1}${vs}` : `${name} ${p.v1}-${p.v2}${vs}`;
   }
   if (p.c1 === p.c2) {
     return p.v1 === p.v2 ? `${name} ${p.c1}:${p.v1}` : `${name} ${p.c1}:${p.v1}-${p.v2}`;
@@ -247,16 +327,16 @@ export async function fetchChapter(book, chapter, translation) {
     const res = await fetch(`https://bolls.life/get-text/${encodeURIComponent(translation)}/${book}/${chapter}/`, {
       signal: ctrl.signal,
     });
-    if (!res.ok) throw new Error(`서버 응답 오류 (${res.status})`);
+    if (!res.ok) throw new Error(t('서버 응답 오류 ({s})', { s: res.status }));
     const data = await res.json();
-    if (!Array.isArray(data)) throw new Error('본문 형식이 달라요');
+    if (!Array.isArray(data)) throw new Error(t('본문 형식이 달라요'));
     const rows = data.map((r) => ({ c: chapter, v: r.verse, text: cleanText(r.text) })).filter((r) => r.text);
-    if (!rows.length) throw new Error('해당 장을 찾지 못했어요');
+    if (!rows.length) throw new Error(t('해당 장을 찾지 못했어요'));
     chapterCache.set(key, rows);
     return rows;
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('시간이 너무 오래 걸려요. 인터넷을 확인해 주세요.');
-    if (e instanceof TypeError) throw new Error('인터넷 연결을 확인해 주세요');
+    if (e.name === 'AbortError') throw new Error(t('시간이 너무 오래 걸려요. 인터넷을 확인해 주세요.'));
+    if (e instanceof TypeError) throw new Error(t('인터넷 연결을 확인해 주세요'));
     throw e;
   } finally {
     clearTimeout(timer);
@@ -276,6 +356,6 @@ export async function fetchPassage(p, translation) {
       out.push(r);
     }
   }
-  if (!out.length) throw new Error('해당 구절을 찾지 못했어요. 장·절 번호를 확인해 주세요.');
+  if (!out.length) throw new Error(t('해당 구절을 찾지 못했어요. 장·절 번호를 확인해 주세요.'));
   return out;
 }
