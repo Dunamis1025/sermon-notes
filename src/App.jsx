@@ -5,6 +5,13 @@ const NOTES_KEY = 'sermon-notes-v1';
 const SETTINGS_KEY = 'sermon-settings-v1';
 const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
+// 화면 분위기 (색은 App.css의 data-theme와 같게 유지)
+const THEMES = [
+  { id: 'fresh', name: '산뜻', desc: '맑은 하늘색', bg: '#f3f8ff', card: '#ffffff', accent: '#2b72d6', ink: '#1b2733' },
+  { id: 'chic', name: '시크', desc: '차분한 흑백', bg: '#f5f5f3', card: '#ffffff', accent: '#1c1c1c', ink: '#151515' },
+  { id: 'warm', name: '따뜻', desc: '포근한 크림색', bg: '#fff7ee', card: '#fffdfa', accent: '#cf5d37', ink: '#3b2d25' },
+];
+
 function load(key, fallback) {
   try {
     const v = JSON.parse(localStorage.getItem(key));
@@ -90,7 +97,7 @@ function refLabels(n) {
 
 export default function App() {
   const [notes, setNotes] = useState(() => load(NOTES_KEY, []).map(normalizeNote));
-  const [settings, setSettings] = useState(() => ({ translation: 'KRV', ...load(SETTINGS_KEY, {}) }));
+  const [settings, setSettings] = useState(() => ({ translation: 'KRV', theme: 'fresh', ...load(SETTINGS_KEY, {}) }));
   const [editingId, setEditingId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -140,6 +147,13 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toast]);
   useEffect(() => save(SETTINGS_KEY, settings), [settings]);
+  // 고른 분위기를 화면에 적용
+  useEffect(() => {
+    const t = THEMES.find((x) => x.id === settings.theme) || THEMES[0];
+    document.documentElement.setAttribute('data-theme', t.id);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', t.bg);
+  }, [settings.theme]);
 
   const editing = notes.find((n) => n.id === editingId) || null;
 
@@ -609,6 +623,28 @@ function Settings({ settings, setSettings, notes, setNotes, onClose }) {
     <div className="overlay" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <h2>설정</h2>
+
+        <div className="field">
+          <label>화면 분위기</label>
+          <div className="themes">
+            {THEMES.map((t) => (
+              <button
+                key={t.id}
+                className={settings.theme === t.id ? 'theme on' : 'theme'}
+                onClick={() => setSettings({ ...settings, theme: t.id })}
+              >
+                <span className="swatch" style={{ background: t.bg }}>
+                  <span className="sw-card" style={{ background: t.card }}>
+                    <i style={{ background: t.accent }} />
+                    <b style={{ background: t.ink }} />
+                  </span>
+                </span>
+                <span className="tname">{t.name}</span>
+                <span className="tdesc">{t.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="field">
           <label>성경 번역 코드</label>
