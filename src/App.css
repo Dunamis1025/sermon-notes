@@ -200,3 +200,5 @@ textarea.body { min-height: 220px; resize: none; line-height: 1.8; overflow: hid
 .swipe-actions .del { background: #b24a3c; color: #fff; }
 .swipe-actions .cancel { background: var(--card); border: 1px solid var(--line); color: var(--ink); }
 .hint { text-align: center; color: var(--muted); font-size: 12px; margin: 14px 0 0; }
+
+.linkbtn.inline { margin-left: 8px; padding: 0 4px; }

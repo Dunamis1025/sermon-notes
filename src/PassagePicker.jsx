@@ -109,11 +109,17 @@ export default function PassagePicker({ translation, pinned, onPin, onManual, on
     }
   }
 
+  // 절을 누를 때마다 범위가 자연스럽게 늘어나고 줄어듦
   function tapVerse(v) {
     setSel((s) => {
-      if (!s || s.a !== s.b) return { a: v, b: v }; // 새로 시작
-      if (s.a === v) return null; // 같은 절 다시 누르면 해제
-      return { a: Math.min(s.a, v), b: Math.max(s.a, v) }; // 범위 완성
+      if (!s) return { a: v, b: v }; // 처음 누른 절
+      if (v < s.a) return { a: v, b: s.b }; // 앞쪽 절 → 시작을 넓힘
+      if (v > s.b) return { a: s.a, b: v }; // 뒤쪽 절 → 끝을 넓힘
+      if (s.a === s.b) return null; // 한 절만 골라 둔 상태에서 같은 절 → 해제
+      if (v === s.a) return { a: s.a + 1, b: s.b }; // 시작 절을 누르면 그 절만 빠짐
+      if (v === s.b) return { a: s.a, b: s.b - 1 }; // 끝 절을 누르면 그 절만 빠짐
+      // 범위 안쪽 절 → 가까운 쪽 끝을 그 절까지 줄임
+      return v - s.a <= s.b - v ? { a: v, b: s.b } : { a: s.a, b: v };
     });
   }
 
@@ -158,9 +164,14 @@ export default function PassagePicker({ translation, pinned, onPin, onManual, on
             <p className="msg">
               {sel
                 ? sel.a === sel.b
-                  ? `${sel.a}절 선택됨 — 끝 절을 누르면 범위가 돼요`
-                  : `${sel.a}~${sel.b}절 선택됨`
+                  ? `${sel.a}절 선택됨 — 다른 절을 누르면 범위가 넓어져요`
+                  : `${sel.a}~${sel.b}절 선택됨 — 바깥 절을 누르면 늘어나고, 양쪽 끝 절을 누르면 줄어요`
                 : '시작 절을 누르고, 여러 절이면 끝 절도 눌러 주세요'}
+              {sel && (
+                <button className="linkbtn inline" onClick={() => setSel(null)}>
+                  선택 해제
+                </button>
+              )}
             </p>
             <ul className="verselist">
               {verses.map((r) => (
