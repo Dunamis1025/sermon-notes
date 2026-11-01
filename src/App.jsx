@@ -83,10 +83,32 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
 
+  const notesRef = useRef(notes);
+  const dirtyRef = useRef(false); // 아직 저장하지 못한 변경이 있는지
   useEffect(() => {
-    const t = setTimeout(() => save(NOTES_KEY, notes), 300);
+    notesRef.current = notes;
+    dirtyRef.current = true;
+    const t = setTimeout(() => {
+      save(NOTES_KEY, notes);
+      dirtyRef.current = false;
+    }, 300);
     return () => clearTimeout(t);
   }, [notes]);
+  // 앱을 닫거나 다른 앱으로 넘어갈 때, 저장 못 한 변경이 있으면 기다리지 않고 바로 저장
+  useEffect(() => {
+    const flush = () => {
+      if (!dirtyRef.current) return;
+      save(NOTES_KEY, notesRef.current);
+      dirtyRef.current = false;
+    };
+    const onVis = () => document.visibilityState === 'hidden' && flush();
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, []);
   useEffect(() => save(SETTINGS_KEY, settings), [settings]);
 
   const editing = notes.find((n) => n.id === editingId) || null;
@@ -493,12 +515,23 @@ function Settings({ settings, setSettings, notes, setNotes, onClose }) {
   const fileRef = useRef(null);
   const [msg, setMsg] = useState('');
 
-  function exportAll() {
-    const blob = new Blob([JSON.stringify({ app: 'sermon-notes', notes }, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+  async function exportAll() {
+    const name = `sermon-notes-${todayStr()}.json`;
+    const text = JSON.stringify({ app: 'sermon-notes', notes }, null, 2);
+    // 아이폰·아이패드: 공유 창(에어드롭, 파일에 저장, 카카오톡 등)으로 보냄
+    try {
+      const file = new File([text], name, { type: 'application/json' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: '설교 노트 백업' });
+        return;
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // 사용자가 공유 창을 닫음
+    }
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `sermon-notes-${todayStr()}.json`;
+    a.download = name;
     a.click();
     URL.revokeObjectURL(url);
   }
