@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PassagePicker from './PassagePicker';
 
 const NOTES_KEY = 'sermon-notes-v1';
@@ -17,6 +17,17 @@ function save(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {}
+}
+
+// 노트 저장 — 저장한 뒤 다시 읽어 봐서 실제로 저장됐는지 확인함
+function writeNotes(list) {
+  try {
+    const json = JSON.stringify(list);
+    localStorage.setItem(NOTES_KEY, json);
+    return localStorage.getItem(NOTES_KEY) === json;
+  } catch {
+    return false;
+  }
 }
 
 function todayStr() {
@@ -83,23 +94,31 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
 
+  const [saveState, setSaveState] = useState('saved'); // 'saved' | 'pending' | 'error'
+  const [savedAt, setSavedAt] = useState(null);
+  const [toast, setToast] = useState('');
   const notesRef = useRef(notes);
   const dirtyRef = useRef(false); // 아직 저장하지 못한 변경이 있는지
+  const firstRun = useRef(true);
+
+  const markSaved = useCallback((ok) => {
+    dirtyRef.current = !ok;
+    setSaveState(ok ? 'saved' : 'error');
+    if (ok) setSavedAt(Date.now());
+  }, []);
+  // 글을 고치면 잠시 뒤 자동 저장
   useEffect(() => {
     notesRef.current = notes;
     dirtyRef.current = true;
-    const t = setTimeout(() => {
-      save(NOTES_KEY, notes);
-      dirtyRef.current = false;
-    }, 300);
+    if (!firstRun.current) setSaveState('pending');
+    firstRun.current = false;
+    const t = setTimeout(() => markSaved(writeNotes(notes)), 300);
     return () => clearTimeout(t);
-  }, [notes]);
+  }, [notes, markSaved]);
   // 앱을 닫거나 다른 앱으로 넘어갈 때, 저장 못 한 변경이 있으면 기다리지 않고 바로 저장
   useEffect(() => {
     const flush = () => {
-      if (!dirtyRef.current) return;
-      save(NOTES_KEY, notesRef.current);
-      dirtyRef.current = false;
+      if (dirtyRef.current) markSaved(writeNotes(notesRef.current));
     };
     const onVis = () => document.visibilityState === 'hidden' && flush();
     document.addEventListener('visibilitychange', onVis);
@@ -108,7 +127,18 @@ export default function App() {
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('pagehide', flush);
     };
-  }, []);
+  }, [markSaved]);
+  // 저장 버튼: 바로 저장하고 결과를 알려 줌
+  function saveNow() {
+    const ok = writeNotes(notesRef.current);
+    markSaved(ok);
+    setToast(ok ? '✓ 저장했어요' : '저장하지 못했어요. 기기 저장 공간을 확인해 주세요');
+  }
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(''), 2200);
+    return () => clearTimeout(t);
+  }, [toast]);
   useEffect(() => save(SETTINGS_KEY, settings), [settings]);
 
   const editing = notes.find((n) => n.id === editingId) || null;
@@ -146,6 +176,9 @@ export default function App() {
           onPatch={(patch) => patchNote(editing.id, patch)}
           onBack={closeEditor}
           onDelete={() => deleteNote(editing.id)}
+          saveState={saveState}
+          savedAt={savedAt}
+          onSave={saveNow}
         />
       ) : (
         <List
@@ -164,6 +197,11 @@ export default function App() {
           setNotes={setNotes}
           onClose={() => setShowSettings(false)}
         />
+      )}
+      {toast && (
+        <div className={saveState === 'error' ? 'toast error' : 'toast'} role="status">
+          {toast}
+        </div>
       )}
     </div>
   );
@@ -348,7 +386,7 @@ function NoteRow({ n, armed, onArm, onOpen, onDelete }) {
 
 /* ───────────── 노트 작성 ───────────── */
 
-function Editor({ note, translation, onPatch, onBack, onDelete }) {
+function Editor({ note, translation, onPatch, onBack, onDelete, saveState, savedAt, onSave }) {
   const [mode, setMode] = useState(note.passages.length ? null : 'pick'); // null | 'pick' | 'paste'
   const [paste, setPaste] = useState({ label: '', text: '' });
   const [closed, setClosed] = useState({}); // 접어 둔 말씀 id
@@ -385,11 +423,22 @@ function Editor({ note, translation, onPatch, onBack, onDelete }) {
 
   return (
     <>
-      <header className="topbar">
+      <header className="topbar sticky">
         <button className="back" onClick={onBack}>
           ‹ 목록
         </button>
-        <span className="saved">자동 저장됨</span>
+        <div className="savebox">
+          <span className={`savestate ${saveState}`}>
+            {saveState === 'saved'
+              ? `✓ 저장됨${savedAt ? ' ' + new Date(savedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : ''}`
+              : saveState === 'pending'
+              ? '저장 중…'
+              : '⚠ 저장 실패'}
+          </span>
+          <button className="primary small" onClick={onSave}>
+            저장
+          </button>
+        </div>
         <button className="icon-btn danger" onClick={onDelete} aria-label="삭제">
           🗑
         </button>
