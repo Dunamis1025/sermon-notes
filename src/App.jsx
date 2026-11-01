@@ -98,6 +98,13 @@ function refLabels(n) {
   return n.passages.map((p) => p.refLabel).join(', ');
 }
 
+const TRANSLATIONS = [
+  { code: 'KRV', name: '한국어 (개역한글)' },
+  { code: 'NIV', name: 'English (NIV)' },
+  { code: 'ESV', name: 'English (ESV)' },
+  { code: 'KJV', name: 'English (KJV)' },
+];
+
 export default function App() {
   const [notes, setNotes] = useState(() => load(NOTES_KEY, []).map(normalizeNote));
   const [settings, setSettings] = useState(() => ({ translation: 'KRV', theme: 'fresh', ...load(SETTINGS_KEY, {}) }));
@@ -678,7 +685,21 @@ function Settings({ settings, setSettings, notes, setNotes, cloud, user, sync, o
         </div>
 
         <div className="field">
-          <label>성경 번역 코드</label>
+          <label>성경 번역</label>
+          <div className="row">
+            {TRANSLATIONS.map((t) => (
+              <button
+                key={t.code}
+                className={settings.translation === t.code ? 'primary' : ''}
+                onClick={() => setSettings({ ...settings, translation: t.code })}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+          <p className="msg">
+            새로 붙이는 말씀부터 선택한 번역으로 가져와요. 이미 붙인 말씀은 그대로예요. 다른 번역을 쓰려면 아래에 코드를 직접 입력하세요.
+          </p>
           <input
             type="text"
             value={settings.translation}
@@ -686,7 +707,6 @@ function Settings({ settings, setSettings, notes, setNotes, cloud, user, sync, o
             autoCapitalize="characters"
             autoCorrect="off"
           />
-          <p className="msg">기본값 KRV(개역한글). 본문이 안 나오면 다른 코드로 바꿔 보세요.</p>
         </div>
 
         <SyncPanel cloud={cloud} user={user} sync={sync} />

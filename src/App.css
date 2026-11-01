@@ -278,3 +278,4 @@ button.primary.small { padding: 8px 18px; font-size: 15px; border-radius: var(--
 .syncbox .row { display: flex; gap: 8px; }
 .syncbox .row button { flex: 1; }
 .linkbtn { background: none; border: none; color: var(--accent); text-decoration: underline; font-size: 13px; padding: 4px 0; align-self: flex-start; }
+.row { flex-wrap: wrap; }
