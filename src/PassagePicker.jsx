@@ -7,12 +7,14 @@ const OT = BOOKS.filter(([id]) => id <= 39);
 const NT = BOOKS.filter(([id]) => id > 39);
 
 // 말씀 고르기: ① 글자 입력(자동완성) ② 구약/신약 목록 ③ 책 → 장 → 절 탭
+const SINGLE = new Set([31, 57, 63, 64, 65]); // 장이 하나뿐인 책(오바댜·빌레몬서·요이·요삼·유다서)
+
 export default function PassagePicker({ translation, pinned, onPin, onManual, onClose }) {
   const [input, setInput] = useState('');
   const [book, setBook] = useState(null);
   const [chapter, setChapter] = useState(null);
   const [verses, setVerses] = useState([]);
-  const [sel, setSel] = useState(null); // { a, b } 선택된 절 범위
+  const [sel, setSel] = useState([]); // 선택된 절 번호들(오름차순)
   const [testament, setTestament] = useState(null); // null | 'ot' | 'nt'
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -34,7 +36,7 @@ export default function PassagePicker({ translation, pinned, onPin, onManual, on
     setError('');
     setBook(b);
     setChapter(c);
-    setSel(null);
+    setSel([]);
     setVerses([]);
     setBusy(true);
     try {
@@ -109,25 +111,34 @@ export default function PassagePicker({ translation, pinned, onPin, onManual, on
     }
   }
 
-  // 절을 누를 때마다 범위가 자연스럽게 늘어나고 줄어듦
+  // 절을 누르면 선택/해제 (떨어져 있는 절도 따로 고를 수 있음)
   function tapVerse(v) {
-    setSel((s) => {
-      if (!s) return { a: v, b: v }; // 처음 누른 절
-      if (v < s.a) return { a: v, b: s.b }; // 앞쪽 절 → 시작을 넓힘
-      if (v > s.b) return { a: s.a, b: v }; // 뒤쪽 절 → 끝을 넓힘
-      if (s.a === s.b) return null; // 한 절만 골라 둔 상태에서 같은 절 → 해제
-      if (v === s.a) return { a: s.a + 1, b: s.b }; // 시작 절을 누르면 그 절만 빠짐
-      if (v === s.b) return { a: s.a, b: s.b - 1 }; // 끝 절을 누르면 그 절만 빠짐
-      // 범위 안쪽 절 → 가까운 쪽 끝을 그 절까지 줄임
-      return v - s.a <= s.b - v ? { a: v, b: s.b } : { a: s.a, b: v };
-    });
+    setSel((s) => (s.includes(v) ? s.filter((x) => x !== v) : [...s, v].sort((x, y) => x - y)));
+  }
+
+  // 선택한 절을 이어진 덩어리로 묶음: [2,3,6] → [[2,3],[6,6]]
+  function runsOf(list) {
+    const runs = [];
+    for (const v of list) {
+      const last = runs[runs.length - 1];
+      if (last && v === last[1] + 1) last[1] = v;
+      else runs.push([v, v]);
+    }
+    return runs;
   }
 
   /* ── 절 고르기 ── */
   if (chapter != null) {
     const unit = book === 19 ? '편' : '장';
     const ref = (v1, v2) => ({ book, bookName: bookName(book), c1: chapter, c2: chapter, v1, v2 });
-    const selLabel = sel ? formatReference(ref(sel.a, sel.b)) : '';
+    const runs = runsOf(sel);
+    const selLabel = runs.length
+      ? runs.length === 1
+        ? formatReference(ref(runs[0][0], runs[0][1]))
+        : formatReference(ref(runs[0][0], runs[0][1])).replace(/절$/, '') +
+          runs.slice(1).map(([x, y]) => (x === y ? `, ${x}` : `, ${x}-${y}`)).join('') +
+          (SINGLE.has(book) ? '절' : '')
+      : '';
     return (
       <div className="picker">
         <div className="picker-head">
@@ -135,7 +146,7 @@ export default function PassagePicker({ translation, pinned, onPin, onManual, on
             className="back"
             onClick={() => {
               setChapter(null);
-              setSel(null);
+              setSel([]);
               setError('');
               if (CHAPTERS[book - 1] === 1) setBook(null);
             }}
@@ -162,13 +173,11 @@ export default function PassagePicker({ translation, pinned, onPin, onManual, on
         {verses.length > 0 && (
           <>
             <p className="msg">
-              {sel
-                ? sel.a === sel.b
-                  ? `${sel.a}절 선택됨 — 다른 절을 누르면 범위가 넓어져요`
-                  : `${sel.a}~${sel.b}절 선택됨 — 바깥 절을 누르면 늘어나고, 양쪽 끝 절을 누르면 줄어요`
+              {sel.length
+                ? `${runs.map(([x, y]) => (x === y ? x : `${x}~${y}`)).join(', ')}절 선택됨 — 누르면 선택/해제, 떨어진 절도 고를 수 있어요`
                 : '시작 절을 누르고, 여러 절이면 끝 절도 눌러 주세요'}
-              {sel && (
-                <button className="linkbtn inline" onClick={() => setSel(null)}>
+              {sel.length > 0 && (
+                <button className="linkbtn inline" onClick={() => setSel([])}>
                   선택 해제
                 </button>
               )}
@@ -177,7 +186,7 @@ export default function PassagePicker({ translation, pinned, onPin, onManual, on
               {verses.map((r) => (
                 <li key={r.v}>
                   <button
-                    className={sel && r.v >= sel.a && r.v <= sel.b ? 'verse in' : 'verse'}
+                    className={sel.includes(r.v) ? 'verse in' : 'verse'}
                     onClick={() => tapVerse(r.v)}
                   >
                     <span className="vn">{r.v}</span>
@@ -189,10 +198,10 @@ export default function PassagePicker({ translation, pinned, onPin, onManual, on
             <div className="pickbar">
               <button
                 className="primary"
-                disabled={!sel}
-                onClick={() => pinVerses(selLabel, verses.filter((r) => r.v >= sel.a && r.v <= sel.b))}
+                disabled={!sel.length}
+                onClick={() => pinVerses(selLabel, verses.filter((r) => sel.includes(r.v)))}
               >
-                {sel ? `📌 ${selLabel} 붙이기` : '절을 선택해 주세요'}
+                {sel.length ? `📌 ${selLabel} 붙이기` : '절을 선택해 주세요'}
               </button>
               <button onClick={() => pinVerses(formatReference(ref(null, null)), verses)}>
                 {unit} 전체
