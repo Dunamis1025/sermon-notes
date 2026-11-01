@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PassagePicker from './PassagePicker';
+import SyncPanel from './SyncPanel';
+import { useCloudSync } from './sync';
+import { firebaseConfig } from './firebaseConfig';
 
 const NOTES_KEY = 'sermon-notes-v1';
 const SETTINGS_KEY = 'sermon-settings-v1';
@@ -100,6 +103,31 @@ export default function App() {
   const [settings, setSettings] = useState(() => ({ translation: 'KRV', theme: 'fresh', ...load(SETTINGS_KEY, {}) }));
   const [editingId, setEditingId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+
+  // 기기 간 동기화 (firebaseConfig가 채워져 있을 때만 켜짐)
+  const [cloud, setCloud] = useState(null);
+  const [user, setUser] = useState(undefined); // undefined 확인 중 | null 로그아웃 | {uid,email}
+  useEffect(() => {
+    if (!firebaseConfig.apiKey) return undefined;
+    let off = () => {};
+    let dead = false;
+    import('./cloud')
+      .then((m) => {
+        if (dead) return;
+        setCloud(m);
+        off = m.onAuth(setUser);
+      })
+      .catch(() => setUser(null));
+    return () => {
+      dead = true;
+      off();
+    };
+  }, []);
+  const backend = useMemo(() => (cloud && user ? cloud.backendFor(user.uid) : null), [cloud, user]);
+  const sync = useCloudSync({ notes, setNotes, backend, uid: user ? user.uid : null });
+  useEffect(() => {
+    if (editingId && !notes.some((n) => n.id === editingId)) setEditingId(null); // 다른 기기에서 지워진 노트
+  }, [notes, editingId]);
 
   const [saveState, setSaveState] = useState('saved'); // 'saved' | 'pending' | 'error'
   const [savedAt, setSavedAt] = useState(null);
@@ -209,6 +237,9 @@ export default function App() {
           setSettings={setSettings}
           notes={notes}
           setNotes={setNotes}
+          cloud={cloud}
+          user={user}
+          sync={sync}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -574,7 +605,7 @@ function Editor({ note, translation, onPatch, onBack, onDelete, saveState, saved
 
 /* ───────────── 설정 / 백업 ───────────── */
 
-function Settings({ settings, setSettings, notes, setNotes, onClose }) {
+function Settings({ settings, setSettings, notes, setNotes, cloud, user, sync, onClose }) {
   const fileRef = useRef(null);
   const [msg, setMsg] = useState('');
 
@@ -657,6 +688,8 @@ function Settings({ settings, setSettings, notes, setNotes, onClose }) {
           />
           <p className="msg">기본값 KRV(개역한글). 본문이 안 나오면 다른 코드로 바꿔 보세요.</p>
         </div>
+
+        <SyncPanel cloud={cloud} user={user} sync={sync} />
 
         <div className="field">
           <label>백업</label>
